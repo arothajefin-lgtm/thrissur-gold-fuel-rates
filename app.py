@@ -1,51 +1,56 @@
 from flask import Flask, jsonify
 import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Thrissur Gold API - Live"
+    return "Thrissur Gold API - NDTV"
 
 @app.route('/api/gold/thrissur')
 def get_gold():
     try:
-        # Method 1: GoldAPI - India rate. Thrissur-ന് +₹15 add ചെയ്യുന്നു
-        url = "https://api.gold-api.com/price/XAU"
-        headers = {'X-API-KEY': 'goldapi-demo'}  # Free demo key
-        r = requests.get(url, headers=headers, timeout=10)
+        url = "https://www.ndtv.com/gold-rate/gold-price-thrissur"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        r = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, 'html.parser')
+
+        # NDTV-ൽ rate direct text ആയിട്ടുണ്ട്
+        text = soup.get_text()
         
-        if r.status_code == 200:
-            data = r.json()
-            # 1 ounce = 31.1035 grams. 1 USD = 83.5 INR approx
-            price_per_gram_24k = data['price'] / 31.1035 * 83.5
-            price_22k_1g = price_per_gram_24k * 0.916 + 15  # Thrissur premium
-            price_24k_1g = price_per_gram_24k + 15
-            price_22k_8g = price_22k_1g * 8
-            
-            return jsonify({
-                "city": "Thrissur",
-                "source": "GoldAPI Live",
-                "24_carat_1g": f"₹{price_24k_1g:.0f}",
-                "22_carat_1g": f"₹{price_22k_1g:.0f}",
-                "22_carat_8g": f"₹{price_22k_8g:.0f}",
-                "status": "live",
-                "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
-        else:
-            raise Exception("GoldAPI failed")
-            
+        # "22 Carat Gold : ₹ 12703" pattern
+        match_22k = re.search(r'22\s*Carat\s*Gold\s*:?\s*₹\s*([\d,]+)', text, re.IGNORECASE)
+        match_24k = re.search(r'24\s*Carat\s*Gold\s*:?\s*₹\s*([\d,]+)', text, re.IGNORECASE)
+        
+        if not match_22k or not match_24k:
+            raise Exception("Rate not found on NDTV page")
+
+        gold_22k_1g = float(match_22k.group(1).replace(',', ''))
+        gold_24k_1g = float(match_24k.group(1).replace(',', ''))
+        gold_22k_8g = gold_22k_1g * 8
+
+        return jsonify({
+            "city": "Thrissur",
+            "source": "NDTV",
+            "24_carat_1g": f"₹{gold_24k_1g:.0f}",
+            "22_carat_1g": f"₹{gold_22k_1g:.0f}",
+            "22_carat_8g": f"₹{gold_22k_8g:.0f}",
+            "status": "live",
+            "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+
     except Exception as e:
-        # Method 2: Fallback - Manual rate. ഇത് ദിവസം 1 തവണ update ചെയ്യണം
         return jsonify({
             "city": "Thrissur",
             "source": "Manual",
-            "24_carat_1g": "₹9,970",
-            "22_carat_1g": "₹9,140", 
-            "22_carat_8g": "₹73,120",
+            "24_carat_1g": "₹13,858",
+            "22_carat_1g": "₹12,703",
+            "22_carat_8g": "₹1,01,624",
             "status": "manual",
-            "note": "Update manually in code",
+            "error": str(e),
             "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
 
